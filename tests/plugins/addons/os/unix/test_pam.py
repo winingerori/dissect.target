@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from dissect.target.plugins.os.unix.pam import PamPlugin
+from dissect.target.plugins.addons.os.unix.pam import PamPlugin
 from dissect.target.target import Target
 from tests._utils import absolute_path
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 def test_pam_conf_format(target_unix: Target, fs_unix: VirtualFilesystem) -> None:
     """Test parsing /etc/pam.conf format configuration."""
-    pam_conf_file = absolute_path("_data/plugins/os/unix/pam/pam.conf")
+    pam_conf_file = absolute_path("_data/plugins/addons/os/unix/pam/pam.conf")
     fs_unix.map_file("/etc/pam.conf", pam_conf_file)
 
     target_unix.add_plugin(PamPlugin)
@@ -69,9 +69,9 @@ def test_pam_conf_format(target_unix: Target, fs_unix: VirtualFilesystem) -> Non
 def test_pam_d_format(target_unix: Target, fs_unix: VirtualFilesystem) -> None:
     """Test parsing /etc/pam.d/ format configuration files."""
     # Map the test files
-    common_auth_file = absolute_path("_data/plugins/os/unix/pam/pam.d/common-auth")
-    sshd_file = absolute_path("_data/plugins/os/unix/pam/pam.d/sshd")
-    sudo_file = absolute_path("_data/plugins/os/unix/pam/pam.d/sudo")
+    common_auth_file = absolute_path("_data/plugins/addons/os/unix/pam/pam.d/common-auth")
+    sshd_file = absolute_path("_data/plugins/addons/os/unix/pam/pam.d/sshd")
+    sudo_file = absolute_path("_data/plugins/addons/os/unix/pam/pam.d/sudo")
     
     fs_unix.map_file("/etc/pam.d/common-auth", common_auth_file)
     fs_unix.map_file("/etc/pam.d/sshd", sshd_file)
@@ -118,8 +118,8 @@ def test_pam_d_format(target_unix: Target, fs_unix: VirtualFilesystem) -> None:
 def test_pam_both_formats(target_unix: Target, fs_unix: VirtualFilesystem) -> None:
     """Test that both pam.conf and pam.d formats are parsed together."""
     # Map both types of configuration
-    pam_conf_file = absolute_path("_data/plugins/os/unix/pam/pam.conf")
-    common_auth_file = absolute_path("_data/plugins/os/unix/pam/pam.d/common-auth")
+    pam_conf_file = absolute_path("_data/plugins/addons/os/unix/pam/pam.conf")
+    common_auth_file = absolute_path("_data/plugins/addons/os/unix/pam/pam.d/common-auth")
     
     fs_unix.map_file("/etc/pam.conf", pam_conf_file)
     fs_unix.map_file("/etc/pam.d/common-auth", common_auth_file)
