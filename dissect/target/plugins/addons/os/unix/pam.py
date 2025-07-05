@@ -7,7 +7,7 @@ from typing import Iterator
 from dissect.target.exceptions import UnsupportedPluginError
 from dissect.target.helpers.descriptor_extensions import UserRecordDescriptorExtension
 from dissect.target.helpers.record import create_extended_descriptor
-from dissect.target.helpers.regex.regex import RegexPlugin
+from dissect.target.helpers.addons.regex.regex import RegexPlugin
 from dissect.target.plugin import export
 
 PamModuleRecord = create_extended_descriptor([UserRecordDescriptorExtension])(

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from dissect.target.helpers.regex import RegexPlugin
+from dissect.target.helpers.addons.regex import RegexPlugin
 
 if TYPE_CHECKING:
     from dissect.target.target import Target

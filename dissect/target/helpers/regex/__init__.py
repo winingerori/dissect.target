@@ -1,3 +1,3 @@
-from .regex import RegexPlugin
+from ..addons.regex.regex import RegexPlugin
 
 __all__ = ["RegexPlugin"]
