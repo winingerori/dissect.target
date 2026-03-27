@@ -1,0 +1,8 @@
+2023-01-15 10:00:00,123 INFO  [main] [com.atlassian.confluence.lifecycle.ConfluenceLifecycle] Confluence is starting up
+2023-01-15 10:00:01,456 INFO  [main] [com.atlassian.confluence.setup.ConfluenceSetup] Setup complete
+2023-01-15 10:23:45,789 ERROR [http-nio-8090-exec-5] [com.atlassian.confluence.pages.PageManager] Error loading page with id 99999
+java.lang.NullPointerException: null
+	at com.atlassian.confluence.pages.DefaultPageManager.getPage(DefaultPageManager.java:123)
+	at com.atlassian.confluence.pages.DefaultPageManager.getById(DefaultPageManager.java:456)
+2023-01-15 10:25:00,000 WARN  [http-nio-8090-exec-3] [com.atlassian.confluence.search.DefaultSearchManager] Search index is out of date
+2023-01-15 10:30:00,111 INFO  [Confluence feature thread pool-1] [com.atlassian.confluence.cluster.ClusterManager] Node joined cluster

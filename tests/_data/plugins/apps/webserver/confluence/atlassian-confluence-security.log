@@ -1,0 +1,5 @@
+2023-01-15 10:01:00,100 INFO  [http-nio-8090-exec-1] [com.atlassian.confluence.security.login.ConfluenceSecurityFilter] login - SUCCESS - login for admin - at IP: 192.168.1.10 - with username: admin
+2023-01-15 10:01:05,200 INFO  [http-nio-8090-exec-2] [com.atlassian.confluence.security.login.ConfluenceSecurityFilter] login - SUCCESS - login for bob - at IP: 10.0.0.1 - with username: bob
+2023-01-15 10:02:00,300 WARN  [http-nio-8090-exec-4] [com.atlassian.confluence.security.login.ConfluenceSecurityFilter] login - FAILED - login for unknown - at IP: 10.0.0.99 - with username: unknown
+2023-01-15 10:02:01,400 WARN  [http-nio-8090-exec-4] [com.atlassian.confluence.security.login.ConfluenceSecurityFilter] login - FAILED - login for admin - at IP: 10.0.0.99 - with username: admin
+2023-01-15 10:30:00,500 INFO  [http-nio-8090-exec-6] [com.atlassian.confluence.security.login.ConfluenceSecurityFilter] logout - SUCCESS - logout for admin - at IP: 192.168.1.10 - with username: admin
