@@ -67,6 +67,30 @@ RE_ACCESS_COMBINED = re.compile(
     re.VERBOSE,
 )
 
+# Tomcat access log in Confluence 7.11+ conf_access_log format (default since 7.11).
+# Configured in conf/server.xml as:
+#   pattern="%t %{X-AUSERNAME}o %I %h %r %s %Dms %b %{Referer}i %{User-Agent}i"
+# Fields: [timestamp] username thread remote_ip METHOD URI PROTOCOL status <N>ms bytes referer useragent
+# Example:
+#   [15/Jan/2023:10:00:01 +0000] admin http-nio-8090-exec-1 192.168.1.10 GET /wiki/index.action HTTP/1.1 200 342ms 12345 - Mozilla/5.0
+RE_ACCESS_CONF_ACCESS_LOG = re.compile(
+    r"""
+        \[(?P<ts>[^\]]+)\]\s+
+        (?P<remote_user>\S+)\s+
+        (?P<thread>\S+)\s+
+        (?P<remote_ip>\S+)\s+
+        (?P<method>\S+)\s+
+        (?P<uri>\S+)\s+
+        (?P<protocol>\S+)\s+
+        (?P<status_code>\d{3})\s+
+        (?P<response_time_ms>\d+)ms\s+
+        (?P<bytes_sent>-|\d+)\s+
+        (?P<referer>\S+)
+        (?:\s+(?P<useragent>.+))?
+    """,
+    re.VERBOSE,
+)
+
 # Tomcat access log in Confluence 7.x+ custom format.
 # Adds CF-Connecting-IP and X-Forwarded-For fields, removes referer/user-agent.
 # Pattern: %a %{CF-Connecting-IP}i %l %u %t %{X-Forwarded-For}i "%r" %s %b %D
@@ -95,12 +119,21 @@ class ConfluencePlugin(Plugin):
     Supports Confluence versions 5.x through 9.x on Linux and Windows.
 
     Parses:
-    - Tomcat HTTP access logs (``localhost_access_log.*.txt`` / ``access_log.*.txt``)
+    - Tomcat HTTP access logs in three formats:
+
+      * ``conf_access_log.<date>.log`` – default since 7.11, format:
+        ``%t %{X-AUSERNAME}o %I %h %r %s %Dms %b %{Referer}i %{User-Agent}i``
+      * ``localhost_access_log.<date>.txt`` – default for 5.x–7.10, Apache combined format
+        (``%h %l %u %t "%r" %s %b "%{Referer}i" "%{User-Agent}i"``)
+      * Older 7.x custom format with CF-Connecting-IP / X-Forwarded-For extra fields
+
     - Application logs (``atlassian-confluence.log`` and rotated variants)
-    - Security/audit logs (``atlassian-confluence-security.log`` and rotated variants)
+    - Security/audit logs (``atlassian-confluence-security.log`` and rotated variants,
+      introduced in Confluence 7.11; earlier versions record auth events in the app log)
 
     References:
         - https://confluence.atlassian.com/doc/working-with-confluence-logs-108364722.html
+        - https://confluence.atlassian.com/doc/configure-access-logs-1044780567.html
         - https://confluence.atlassian.com/conf85/working-with-confluence-logs-1283368208.html
     """
 
@@ -136,8 +169,9 @@ class ConfluencePlugin(Plugin):
     INIT_PROPERTIES_PATH = "confluence/WEB-INF/classes/confluence-init.properties"
 
     # Tomcat access log filename patterns relative to the install dir.
-    # "localhost_access_log" is used by Confluence 5.x–7.x; "access_log" appears in some 8.x+ deployments.
+    # "localhost_access_log" (pre-7.11), "conf_access_log" (7.11+ default), "access_log" (some 8.x+ deployments).
     TOMCAT_ACCESS_LOG_PATTERNS = (
+        "logs/conf_access_log.*.log",
         "logs/localhost_access_log.*.txt",
         "logs/localhost_access_log.*.log",
         "logs/access_log.*.txt",
@@ -223,17 +257,22 @@ class ConfluencePlugin(Plugin):
     def access(self) -> Iterator[WebserverAccessLogRecord]:
         """Return Tomcat HTTP access log entries from Confluence installations.
 
-        Confluence runs on Apache Tomcat and produces access logs in Apache combined log format
-        (pre-7.x default) or the Confluence 7.x+ custom format that adds ``CF-Connecting-IP``
-        and ``X-Forwarded-For`` fields. Both formats are parsed automatically.
+        Three access log formats are auto-detected and parsed:
 
-        Both old-style (``localhost_access_log.*.txt``, used by 5.x–7.x) and new-style
-        (``access_log.*.txt``, used by some 8.x+ deployments) filename patterns are discovered.
+        - **conf_access_log** (7.11+ default): ``[timestamp] username thread host METHOD URI
+          PROTO status <N>ms bytes referer useragent``
+        - **combined** (pre-7.11 default): ``host logname user [timestamp] "request" status bytes
+          "referer" "useragent"``
+        - **Confluence 7.x custom**: combined with extra CF-Connecting-IP / X-Forwarded-For fields
+
+        Filename patterns covered: ``conf_access_log.*.log`` (7.11+),
+        ``localhost_access_log.*.txt`` (5.x–7.10), ``access_log.*.txt`` (some 8.x+ deployments).
 
         Access logs are critical for detecting exploitation of known Confluence CVEs such as
         CVE-2022-26134 (OGNL injection) and CVE-2023-22515 (privilege escalation).
 
         References:
+            - https://confluence.atlassian.com/doc/configure-access-logs-1044780567.html
             - https://confluence.atlassian.com/doc/working-with-confluence-logs-108364722.html
         """
         seen: set[Path] = set()
@@ -351,10 +390,19 @@ def _match_access_line(line: str) -> tuple[dict | None, str | None]:
 
     Returns a ``(fields_dict, format_name)`` tuple, or ``(None, None)`` if no format matched.
 
-    The Confluence 7.x+ format inserts two extra fields between the remote user and the
-    timestamp, so we distinguish formats by counting space-separated tokens before the
-    first ``[`` bracket.
+    Format detection:
+    - ``conf_access_log`` (7.11+ default): line starts with ``[`` (timestamp first field)
+    - ``confluence_7plus`` (older 7.x custom): 4 IP-based tokens before the ``[`` bracket
+    - ``combined`` (pre-7.x default): 3 IP-based tokens before the ``[`` bracket
     """
+    if line.startswith("["):
+        # conf_access_log format: [timestamp] username thread host METHOD URI PROTO status <N>ms bytes ref ua
+        if match := RE_ACCESS_CONF_ACCESS_LOG.match(line):
+            log = match.groupdict()
+            log.pop("thread", None)
+            return log, "conf_access_log"
+        return None, None
+
     bracket_pos = line.find("[")
     if bracket_pos > 0:
         prefix_tokens = line[:bracket_pos].split()

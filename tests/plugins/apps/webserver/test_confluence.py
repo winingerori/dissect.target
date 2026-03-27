@@ -11,6 +11,7 @@ from dissect.target.plugins.apps.webserver.confluence import (
     ConfluencePlugin,
     _clean,
     _match_access_line,
+    RE_ACCESS_CONF_ACCESS_LOG,
 )
 
 if TYPE_CHECKING:
@@ -28,6 +29,14 @@ ACCESS_LOG_COMBINED = textwrap.dedent("""\
     172.16.0.5 - - [15/Jan/2023:10:00:10 +0000] "GET /wiki/rest/api/content?limit=25 HTTP/1.1" 200 4567 "-" "python-requests/2.28.1"
     192.168.1.20 - bob [15/Jan/2023:10:01:00 +0000] "GET /wiki/pages/viewpage.action?pageId=12345 HTTP/1.1" 200 23456 "-" "curl/7.84.0"
     10.0.0.99 - - [15/Jan/2023:10:01:30 +0000] "GET /$%7B%40java.lang.Runtime%40getRuntime%28%29.exec%28%27id%27%29%7D HTTP/1.1" 400 789 "-" "Go-http-client/1.1"
+""")
+
+# Confluence 7.11+ conf_access_log format:
+# %t %{X-AUSERNAME}o %I %h %r %s %Dms %b %{Referer}i %{User-Agent}i
+ACCESS_LOG_CONF_ACCESS_LOG = textwrap.dedent("""\
+    [15/Jan/2023:10:00:01 +0000] admin http-nio-8090-exec-1 192.168.1.10 GET /wiki/index.action HTTP/1.1 200 342ms 12345 https://confluence.example.com/ Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+    [15/Jan/2023:10:00:05 +0000] - http-nio-8090-exec-2 10.0.0.1 POST /wiki/dologin.action HTTP/1.1 302 56ms 0 - -
+    [15/Jan/2023:10:01:30 +0000] - http-nio-8090-exec-3 10.0.0.99 GET /$%7B%40java.lang.Runtime%40getRuntime%28%29%7D HTTP/1.1 400 12ms 789 - python-requests/2.28.1
 """)
 
 # Confluence 7.x+ format: IP CF-Connecting-IP logname user [time] X-Forwarded-For "request" status bytes ms
@@ -96,6 +105,22 @@ def _fh(content: str) -> BytesIO:
             "POST",
             "302",
             id="combined-no-referer-ua",
+        ),
+        pytest.param(
+            "[15/Jan/2023:10:00:01 +0000] admin http-nio-8090-exec-1 192.168.1.10 GET /wiki/index.action HTTP/1.1 200 342ms 12345 - Mozilla/5.0",
+            "conf_access_log",
+            "192.168.1.10",
+            "GET",
+            "200",
+            id="conf_access_log-with-ua",
+        ),
+        pytest.param(
+            "[15/Jan/2023:10:00:05 +0000] - http-nio-8090-exec-2 10.0.0.1 POST /wiki/dologin.action HTTP/1.1 302 56ms 0 - -",
+            "conf_access_log",
+            "10.0.0.1",
+            "POST",
+            "302",
+            id="conf_access_log-no-ua",
         ),
         pytest.param(
             '10.0.0.5 - - - [16/Jan/2023:09:01:00 +0000] - "GET /wiki/rest/api/content HTTP/1.1" 200 5678 789',
@@ -216,6 +241,44 @@ def test_access_confluence_7plus(target_unix: Target, fs_unix: VirtualFilesystem
     # CF-Connecting-IP (10.0.0.2) replaces the remote_ip when it's not "-"
     second = results[1]
     assert str(second.remote_ip) == "10.0.0.2"
+
+
+# ---------------------------------------------------------------------------
+# Access logs: conf_access_log format (Confluence 7.11+ default)
+# ---------------------------------------------------------------------------
+
+
+def test_access_conf_access_log(target_unix: Target, fs_unix: VirtualFilesystem) -> None:
+    """Parse conf_access_log format (Confluence 7.11+ default, prefix=conf_access_log)."""
+    fs_unix.map_file_fh(
+        "opt/atlassian/confluence/logs/conf_access_log.2023-01-15.log",
+        _fh(ACCESS_LOG_CONF_ACCESS_LOG),
+    )
+
+    target_unix.add_plugin(ConfluencePlugin)
+    results = list(target_unix.confluence.access())
+
+    assert len(results) == 3
+
+    first = results[0]
+    assert first.ts == datetime(2023, 1, 15, 10, 0, 1, tzinfo=timezone.utc)
+    assert str(first.remote_ip) == "192.168.1.10"
+    assert first.remote_user == "admin"
+    assert first.method == "GET"
+    assert first.uri == "/wiki/index.action"
+    assert first.protocol == "HTTP/1.1"
+    assert first.status_code == 200
+    assert first.response_time_ms == 342
+
+    # Anonymous request (username "-" → None)
+    second = results[1]
+    assert second.remote_user is None
+    assert second.status_code == 302
+
+    # Exploitation attempt
+    third = results[2]
+    assert third.status_code == 400
+    assert "%" in third.uri
 
 
 # ---------------------------------------------------------------------------
