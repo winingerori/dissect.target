@@ -16,6 +16,26 @@ jobs:
       run-benchmarks: true
     secrets: inherit
 
+  windows-ci:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+          cache-dependency-path: "pyproject.toml"
+      - name: Install tox
+        run: pip install tox
+      - name: Run tests
+        run: tox -e py
+
   publish:
     if: ${{ github.ref_name == 'main' || github.ref_type == 'tag' }}
     needs: [ci]
